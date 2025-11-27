@@ -73,6 +73,7 @@ pub enum SegmentId {
     Session,
     OutputStyle,
     Update,
+    SubscriptionQuota,
 }
 
 // Legacy compatibility structure

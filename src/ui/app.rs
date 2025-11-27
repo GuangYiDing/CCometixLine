@@ -4,6 +4,7 @@ use crate::ui::components::{
     help::HelpComponent,
     icon_selector::IconSelectorComponent,
     name_input::NameInputComponent,
+    options_editor::OptionsEditorComponent,
     preview::PreviewComponent,
     segment_list::{FieldSelection, Panel, SegmentListComponent},
     separator_editor::SeparatorEditorComponent,
@@ -33,6 +34,7 @@ pub struct App {
     color_picker: ColorPickerComponent,
     icon_selector: IconSelectorComponent,
     name_input: NameInputComponent,
+    options_editor: OptionsEditorComponent,
     preview: PreviewComponent,
     segment_list: SegmentListComponent,
     separator_editor: SeparatorEditorComponent,
@@ -53,6 +55,7 @@ impl App {
             color_picker: ColorPickerComponent::new(),
             icon_selector: IconSelectorComponent::new(),
             name_input: NameInputComponent::new(),
+            options_editor: OptionsEditorComponent::new(),
             preview: PreviewComponent::new(),
             segment_list: SegmentListComponent::new(),
             separator_editor: SeparatorEditorComponent::new(),
@@ -178,6 +181,30 @@ impl App {
                         KeyCode::Backspace if app.icon_selector.editing_custom => {
                             app.icon_selector.backspace();
                         }
+                        _ => {}
+                    }
+                } else if app.options_editor.is_open {
+                    match key.code {
+                        KeyCode::Esc => {
+                            let modified = app.options_editor.stop_editing(false);
+                            if let Some(_) = modified {
+                                // Cancelled, do nothing
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if !app.options_editor.editing_value {
+                                app.options_editor.start_editing();
+                            } else {
+                                let modified = app.options_editor.stop_editing(true);
+                                if let Some(modified_options) = modified {
+                                    app.apply_modified_options(modified_options);
+                                }
+                            }
+                        }
+                        KeyCode::Up => app.options_editor.move_selection(-1),
+                        KeyCode::Down => app.options_editor.move_selection(1),
+                        KeyCode::Char(c) => app.options_editor.input_char(c),
+                        KeyCode::Backspace => app.options_editor.backspace(),
                         _ => {}
                     }
                 } else {
@@ -450,6 +477,9 @@ impl App {
         if self.separator_editor.is_open {
             self.separator_editor.render(f, f.area());
         }
+        if self.options_editor.is_open {
+            self.options_editor.render(f, f.area());
+        }
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -503,6 +533,7 @@ impl App {
                         SegmentId::Session => "Session",
                         SegmentId::OutputStyle => "Output Style",
                         SegmentId::Update => "Update",
+                        SegmentId::SubscriptionQuota => "Subscription Quota",
                     };
                     let is_enabled = segment.enabled;
                     self.status_message = Some(format!(
@@ -530,6 +561,7 @@ impl App {
                                 SegmentId::Session => "Session",
                                 SegmentId::OutputStyle => "Output Style",
                                 SegmentId::Update => "Update",
+                                SegmentId::SubscriptionQuota => "Subscription Quota",
                             };
                             let is_enabled = segment.enabled;
                             self.status_message = Some(format!(
@@ -560,9 +592,12 @@ impl App {
                         }
                     }
                     FieldSelection::Options => {
-                        // TODO: Implement options editor
-                        self.status_message =
-                            Some("Options editor not implemented yet".to_string());
+                        // Open options editor
+                        if let Some(segment) = self.config.segments.get(self.selected_segment) {
+                            let options_vec: Vec<(String, serde_json::Value)> =
+                                segment.options.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                            self.options_editor.open(segment.id, &options_vec);
+                        }
                     }
                 }
             }
@@ -702,5 +737,29 @@ impl App {
     fn open_separator_editor(&mut self) {
         self.status_message = Some("Opening separator editor...".to_string());
         self.separator_editor.open(&self.config.style.separator);
+    }
+
+    /// Apply modified options to the current segment
+    fn apply_modified_options(&mut self, modified_options: Vec<(String, String)>) {
+        if let Some(segment) = self.config.segments.get_mut(self.selected_segment) {
+            for (key, value) in modified_options {
+                // Parse value based on type
+                let json_value = if key == "cache_duration" || key == "timeout" {
+                    // Parse as number
+                    if let Ok(num) = value.parse::<u64>() {
+                        serde_json::Value::Number(serde_json::Number::from(num))
+                    } else {
+                        serde_json::Value::String(value)
+                    }
+                } else {
+                    // Keep as string
+                    serde_json::Value::String(value)
+                };
+
+                segment.options.insert(key, json_value);
+            }
+            self.preview.update_preview(&self.config);
+            self.status_message = Some("Options updated!".to_string());
+        }
     }
 }

@@ -183,6 +183,16 @@ impl PreviewComponent {
                         map
                     },
                 },
+                SegmentId::SubscriptionQuota => SegmentData {
+                    primary: "65%".to_string(),
+                    secondary: "· 1.2k remaining".to_string(),
+                    metadata: {
+                        let mut map = HashMap::new();
+                        map.insert("dynamic_icon".to_string(), "\u{f0aa3}".to_string());
+                        map.insert("percentage".to_string(), "65".to_string());
+                        map
+                    },
+                },
             };
 
             segments_data.push((segment_config.clone(), mock_data));

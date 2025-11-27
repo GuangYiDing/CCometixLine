@@ -246,3 +246,37 @@ pub fn usage_segment() -> SegmentConfig {
         },
     }
 }
+
+pub fn subscription_quota_segment() -> SegmentConfig {
+    SegmentConfig {
+        id: SegmentId::SubscriptionQuota,
+        enabled: false,
+        icon: IconConfig {
+            plain: "💳".to_string(),
+            nerd_font: "\u{f0a9e}".to_string(), // circle_slice_1
+        },
+        colors: ColorConfig {
+            icon: Some(AnsiColor::Color16 { c16: 5 }), // Purple
+            text: Some(AnsiColor::Color16 { c16: 5 }),
+            background: None,
+        },
+        styles: TextStyleConfig::default(),
+        options: {
+            let mut opts = HashMap::new();
+            opts.insert(
+                "cache_duration".to_string(),
+                serde_json::Value::Number(300.into()),
+            );
+            opts.insert("timeout".to_string(), serde_json::Value::Number(5.into()));
+            opts.insert(
+                "output_format".to_string(),
+                serde_json::Value::String("text".to_string()),
+            );
+            opts.insert(
+                "custom_script_path".to_string(),
+                serde_json::Value::String("".to_string()),
+            );
+            opts
+        },
+    }
+}

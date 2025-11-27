@@ -34,3 +34,7 @@ regex = "1.0"
 default = ["tui", "self-update", "dirs"]
 tui = ["ratatui", "crossterm", "ansi_term", "ansi-to-tui", "chrono"]
 self-update = ["ureq", "semver", "chrono", "dirs"]
+
+[[bin]]
+name = "ccline"
+path = "src/main.rs"
