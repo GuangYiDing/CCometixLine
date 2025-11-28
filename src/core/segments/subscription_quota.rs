@@ -74,34 +74,65 @@ impl SubscriptionQuotaSegment {
         }
     }
 
-    fn execute_script(script_path: &str, _timeout_secs: u64) -> Result<String, String> {
-        let output = Command::new("sh")
-            .args(["-c", script_path])
-            .output()
-            .map_err(|e| format!("Failed to execute script: {}", e))?;
+    fn execute_script(script_path: &str, timeout_secs: u64) -> Result<String, String> {
+        use std::sync::{Arc, Mutex};
+        use std::sync::atomic::{AtomicBool, Ordering};
 
-        if !output.status.success() {
-            return Err(format!(
-                "Script exited with status {}",
-                output.status
-            ));
+        let script_path_owned = script_path.to_owned();
+        let result = Arc::new(Mutex::new(None));
+        let result_clone = Arc::clone(&result);
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = Arc::clone(&finished);
+
+        // Spawn a thread to execute the script
+        let handle = std::thread::spawn(move || {
+            let output = Command::new("sh")
+                .args(["-c", &script_path_owned])
+                .output()
+                .map_err(|e| format!("Failed to execute script: {}", e));
+
+            *result_clone.lock().unwrap() = Some(output);
+            finished_clone.store(true, Ordering::Relaxed);
+        });
+
+        // Wait for either completion or timeout
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(timeout_secs) {
+            if finished.load(Ordering::Relaxed) {
+                // Join the thread to ensure it completes
+                let _ = handle.join();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.trim().to_string())
+        // Check if finished
+        if finished.load(Ordering::Relaxed) {
+            if let Some(Ok(output)) = result.lock().unwrap().as_ref() {
+                if !output.status.success() {
+                    return Err(format!(
+                        "Script exited with status {}",
+                        output.status
+                    ));
+                }
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                return Ok(stdout.trim().to_string());
+            } else if let Some(Err(e)) = result.lock().unwrap().as_ref() {
+                return Err(e.clone());
+            }
+        }
+
+        // Timeout occurred
+        Err(format!("Script execution timed out after {} seconds", timeout_secs))
     }
 
     fn parse_output(output: &str, output_format: &str, _parse_rules: Option<&str>) -> Result<(f64, Option<String>), String> {
         match output_format {
             "text" => {
-                let percentage = output
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|_| "Failed to parse percentage from text".to_string())?;
-                if percentage < 0.0 || percentage > 100.0 {
-                    return Err("Percentage out of range (0-100)".to_string());
-                }
-                Ok((percentage, None))
+                // For text format, return the output directly as primary text
+                // Let the script output be displayed as-is without any parsing
+                let percentage = 0.0; // Use 0% as default since we're not parsing percentage
+                Ok((percentage, Some(output.to_string())))
             }
             "json" => {
                 let json_value: serde_json::Value = serde_json::from_str(output)
@@ -198,9 +229,9 @@ impl Segment for SubscriptionQuotaSegment {
             .map(|cache| self.is_cache_valid(cache, cache_duration))
             .unwrap_or(false);
 
-        let (percentage, secondary_text) = if use_cached {
+        let (percentage, secondary_text, script_output) = if use_cached {
             let cache = cached_data.unwrap();
-            (cache.percentage, cache.secondary_text)
+            (cache.percentage, cache.secondary_text, None)
         } else {
             // Execute script and parse output
             match Self::execute_script(script_path, timeout) {
@@ -214,12 +245,12 @@ impl Segment for SubscriptionQuotaSegment {
                                 cached_at: Utc::now().to_rfc3339(),
                             };
                             self.save_cache(&cache);
-                            (percentage, secondary)
+                            (percentage, secondary, Some(output))
                         }
                         Err(e) => {
                             eprintln!("Failed to parse script output: {}", e);
                             if let Some(cache) = cached_data {
-                                (cache.percentage, cache.secondary_text)
+                                (cache.percentage, cache.secondary_text, None)
                             } else {
                                 return None;
                             }
@@ -229,7 +260,7 @@ impl Segment for SubscriptionQuotaSegment {
                 Err(e) => {
                     eprintln!("Script execution failed: {}", e);
                     if let Some(cache) = cached_data {
-                        (cache.percentage, cache.secondary_text)
+                        (cache.percentage, cache.secondary_text, None)
                     } else {
                         return None;
                     }
@@ -237,22 +268,62 @@ impl Segment for SubscriptionQuotaSegment {
             }
         };
 
-        let dynamic_icon = Self::get_circle_icon(percentage);
-        let primary = format!("{:.0}%", percentage.round());
-        let secondary = secondary_text.map(|s| format!("· {}", s)).unwrap_or_default();
+        // Format output based on output_format
+        let (primary, secondary, dynamic_icon);
+
+        if output_format == "text" {
+            // For text format, display the script output directly as primary
+            // Cache stores secondary_text, but we want the raw output
+            primary = script_output.unwrap_or_else(|| {
+                secondary_text.clone().unwrap_or_else(|| "0%".to_string())
+            });
+            secondary = None;
+            dynamic_icon = String::new(); // No icon for custom text format
+        } else {
+            // For JSON and key_value formats, use percentage-based display
+            dynamic_icon = Self::get_circle_icon(percentage);
+            primary = format!("{:.0}%", percentage.round());
+            secondary = secondary_text.map(|s| format!("· {}", s));
+        }
 
         let mut metadata = HashMap::new();
-        metadata.insert("dynamic_icon".to_string(), dynamic_icon);
+        if !dynamic_icon.is_empty() {
+            metadata.insert("dynamic_icon".to_string(), dynamic_icon);
+        }
         metadata.insert("percentage".to_string(), percentage.to_string());
 
         Some(SegmentData {
             primary,
-            secondary,
+            secondary: secondary.unwrap_or_default(),
             metadata,
         })
     }
 
     fn id(&self) -> SegmentId {
         SegmentId::SubscriptionQuota
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timeout_fast_script() {
+        let fast_script = "echo '快速完成'; sleep 1; echo '完成'";
+        let result = SubscriptionQuotaSegment::execute_script(fast_script, 3);
+        assert!(result.is_ok(), "快速脚本应该成功执行");
+        let output = result.unwrap();
+        assert!(output.contains("完成"), "输出应包含 '完成'");
+    }
+
+    #[test]
+    fn test_timeout_slow_script() {
+        let slow_script = "echo '开始'; sleep 10; echo '结束'";
+        let result = SubscriptionQuotaSegment::execute_script(slow_script, 2);
+        assert!(result.is_err(), "慢速脚本应该超时");
+        let error = result.unwrap_err();
+        assert!(error.contains("timed out"), "错误信息应包含 'timed out'");
+        assert!(error.contains("2 seconds"), "错误信息应包含超时时间");
     }
 }
