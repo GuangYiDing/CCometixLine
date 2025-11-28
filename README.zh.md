@@ -18,8 +18,9 @@
 ### 核心功能
 - **Git 集成** 显示分支、状态和跟踪信息
 - **模型显示** 简化的 Claude 模型名称
-- **使用量跟踪** 基于转录文件分析  
+- **使用量跟踪** 基于转录文件分析
 - **目录显示** 显示当前工作空间
+- **订阅配额跟踪** 支持外部脚本和可视化圆环指示器
 - **简洁设计** 使用 Nerd Font 图标
 
 ### 交互式 TUI 功能
@@ -236,6 +237,30 @@ ccline --patch ~/.local/share/fnm/node-versions/v24.4.1/installation/lib/node_mo
 
 基于转录文件分析的令牌使用百分比，包含上下文限制跟踪。
 
+### 订阅配额显示
+
+使用外部脚本跟踪任何服务订阅配额的灵活段落。特性包括：
+
+- **外部脚本支持**：执行自定义脚本从任何 API 或服务获取配额数据
+- **可视化圆环指示器**：8段 Nerd Font 圆环显示使用百分比区间
+- **多种输出格式**：支持纯文本、JSON 和键值对脚本输出
+- **智能缓存**：可配置的缓存持续时间，避免频繁执行脚本
+- **优雅错误处理**：回退到缓存数据或在出错时显示 "-"
+
+配置示例：
+```toml
+[[segments]]
+id = "subscription_quota"
+enabled = true
+[segments.options]
+custom_script_path = "/path/to/check_quota.sh"
+output_format = "text"  # text | json | key_value
+cache_duration = 300    # 秒
+timeout = 10            # 秒
+```
+
+有关编写自定义脚本和示例的详细文档，请参阅 [example-scripts.md](openspec/changes/archive/2025-11-28-add-subscription-quota-segment/example-scripts.md)。
+
 ## 配置
 
 CCometixLine 支持通过 TOML 文件和交互式 TUI 进行完整配置：
@@ -253,7 +278,7 @@ CCometixLine 支持通过 TOML 文件和交互式 TUI 进行完整配置：
 - 颜色自定义
 - 格式选项
 
-支持的段落：目录、Git、模型、使用量、时间、成本、输出样式
+支持的段落：目录、Git、模型、使用量、订阅配额、时间、成本、输出样式
 
 
 ## 系统要求

@@ -16,10 +16,11 @@ The statusline shows: Model | Directory | Git Branch Status | Context Window Inf
 ## Features
 
 ### Core Functionality
-- **Git integration** with branch, status, and tracking info  
+- **Git integration** with branch, status, and tracking info
 - **Model display** with simplified Claude model names
 - **Usage tracking** based on transcript analysis
 - **Directory display** showing current workspace
+- **Subscription quota tracking** with external script support and visual ring indicators
 - **Minimal design** using Nerd Font icons
 
 ### Interactive TUI Features
@@ -244,6 +245,30 @@ Shows simplified Claude model names:
 
 Token usage percentage based on transcript analysis with context limit tracking.
 
+### Subscription Quota Display
+
+A flexible segment that tracks subscription quotas from any service using external scripts. Features:
+
+- **External script support**: Execute custom scripts to fetch quota data from any API or service
+- **Visual ring indicators**: 8-segment Nerd Font ring showing usage percentage ranges
+- **Multiple output formats**: Supports plain text, JSON, and key-value script outputs
+- **Smart caching**: Configurable cache duration to avoid frequent script execution
+- **Graceful error handling**: Falls back to cached data or displays "-" on errors
+
+Example configuration:
+```toml
+[[segments]]
+id = "subscription_quota"
+enabled = true
+[segments.options]
+custom_script_path = "/path/to/check_quota.sh"
+output_format = "text"  # text | json | key_value
+cache_duration = 300    # seconds
+timeout = 10            # seconds
+```
+
+For detailed documentation on writing custom scripts and examples, see [example-scripts.md](openspec/changes/archive/2025-11-28-add-subscription-quota-segment/example-scripts.md).
+
 ## Configuration
 
 CCometixLine supports full configuration via TOML files and interactive TUI:
@@ -261,7 +286,7 @@ All segments are configurable with:
 - Color customization
 - Format options
 
-Supported segments: Directory, Git, Model, Usage, Time, Cost, OutputStyle
+Supported segments: Directory, Git, Model, Usage, SubscriptionQuota, Time, Cost, OutputStyle
 
 
 ## Requirements
